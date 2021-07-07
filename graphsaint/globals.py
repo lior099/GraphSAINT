@@ -5,8 +5,11 @@ import argparse
 
 
 import subprocess
-git_rev = subprocess.Popen("git rev-parse --short HEAD", shell=True, stdout=subprocess.PIPE, universal_newlines=True).communicate()[0]
-git_branch = subprocess.Popen("git symbolic-ref --short -q HEAD", shell=True, stdout=subprocess.PIPE, universal_newlines=True).communicate()[0]
+# git_rev = subprocess.Popen("git rev-parse --short HEAD", shell=True, stdout=subprocess.PIPE, universal_newlines=True).communicate()[0]
+# git_branch = subprocess.Popen("git symbolic-ref --short -q HEAD", shell=True, stdout=subprocess.PIPE, universal_newlines=True).communicate()[0]
+
+git_rev = ''
+git_branch = ''
 
 timestamp = time.time()
 timestamp = datetime.datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %H-%M-%S')
@@ -23,11 +26,11 @@ timestamp = datetime.datetime.fromtimestamp(int(timestamp)).strftime('%Y-%m-%d %
 parser = argparse.ArgumentParser(description="argument for GraphSAINT training")
 parser.add_argument("--num_cpu_core",default=20,type=int,help="Number of CPU cores for parallel sampling")
 parser.add_argument("--log_device_placement",default=False,action="store_true",help="Whether to log device placement")
-parser.add_argument("--data_prefix",required=True,type=str,help="prefix identifying training data")
+parser.add_argument("--data_prefix",required=False,type=str,help="prefix identifying training data")
 parser.add_argument("--dir_log",default=".",type=str,help="base directory for logging and saving embeddings")
 parser.add_argument("--gpu",default="-1234",type=str,help="which GPU to use")
 parser.add_argument("--eval_train_every",default=15,type=int,help="How often to evaluate training subgraph accuracy")
-parser.add_argument("--train_config",required=True,type=str,help="path to the configuration of training (*.yml)")
+parser.add_argument("--train_config",required=False,type=str,help="path to the configuration of training (*.yml)")
 parser.add_argument("--dtype",default="s",type=str,help="d for double, s for single precision floating point")
 parser.add_argument("--timeline",default=False,action="store_true",help="to save timeline.json or not")
 parser.add_argument("--tensorboard",default=False,action="store_true",help="to save data to tensorboard or not")
@@ -45,7 +48,7 @@ EVAL_VAL_EVERY_EP = 1       # get accuracy on the validation set every this # ep
 
 # auto choosing available NVIDIA GPU
 gpu_selected = args_global.gpu
-if gpu_selected == '-1234':
+if False and gpu_selected == '-1234':
     # auto detect gpu by filtering on the nvidia-smi command output
     gpu_stat = subprocess.Popen("nvidia-smi",shell=True,stdout=subprocess.PIPE,universal_newlines=True).communicate()[0]
     gpu_avail = set([str(i) for i in range(8)])
