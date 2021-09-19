@@ -38,6 +38,7 @@ def evaluate_full_batch(model, minibatch, mode='val'):
         auc.append(metrics.auc(fpr, tpr))
     f1mic = f1mic[0] if len(f1mic)==1 else f1mic
     f1mac = f1mac[0] if len(f1mac)==1 else f1mac
+    auc = auc[0] if len(auc)==1 else auc
     # loss is not very accurate in this case, since loss is also contributed by training nodes
     # on the other hand, for val / test, we mostly care about their accuracy only.
     # so the loss issue is not a problem.
@@ -66,11 +67,11 @@ def prepare(train_data,train_params,arch_gcn):
     return model, minibatch, minibatch_eval, model_eval
 
 
-def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_every):
+def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_every, early_stop='auc'):
     if not args_global.cpu_eval:
         minibatch_eval=minibatch
     epoch_ph_start = 0
-    f1mic_best, ep_best = 0, -1
+    f1mic_best, auc_best, ep_best = 0, 0.5, -1
     time_train = 0
     dir_saver = '{}/pytorch_models'.format(args_global.dir_log)
     path_saver = '{}/pytorch_models/saved_model_{}.pkl'.format(args_global.dir_log, timestamp)
@@ -103,10 +104,10 @@ def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_e
                         .format(f_mean(l_loss_tr), f_mean(l_f1mic_tr), f_mean(l_f1mac_tr), time_train_ep))
                 printf(' VALIDATION:     loss = {:.4f}\tmic = {:.4f}\tmac = {:.4f}'\
                         .format(loss_val, f1mic_val, f1mac_val), style='yellow')
-                print('auc = ', f_mean(auc))
+                print('validation auc = ', auc)
 
-                if f1mic_val > f1mic_best:
-                    f1mic_best, ep_best = f1mic_val, e
+                if (early_stop == 'auc' and auc > auc_best) or (early_stop == 'f1' and f1mic_val > f1mic_best):
+                    f1mic_best, auc_best, ep_best = f1mic_val, auc, e
                     if not os.path.exists(dir_saver):
                         os.makedirs(dir_saver)
                     printf('  Saving model ...', style='yellow')
@@ -124,13 +125,15 @@ def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_e
     loss, f1mic_both, f1mac_both, auc = evaluate_full_batch(model_eval, minibatch_eval, mode='valtest')
     f1mic_val, f1mic_test = f1mic_both
     f1mac_val, f1mac_test = f1mac_both
+    auc_val, auc_test = auc
     printf("Full validation (Epoch {:4d}): \n  F1_Micro = {:.4f}\tF1_Macro = {:.4f}"\
             .format(ep_best, f1mic_val, f1mac_val), style='red')
     printf("Full test stats: \n  F1_Micro = {:.4f}\tF1_Macro = {:.4f}"\
             .format(f1mic_test, f1mac_test), style='red')
-    print('auc = ', f_mean(auc))
+    print('Final validation auc = ', auc_val)
+    print('Final test auc = ', auc_test)
     printf("Total training time: {:6.2f} sec".format(time_train), style='red')
-    return f_mean(auc)
+    return auc_test
 
 def save_state(auc):
     import pickle

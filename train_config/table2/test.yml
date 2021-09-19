@@ -11,6 +11,6 @@ params:
     weight_decay: 0.0
     sample_coverage: 50
 phase:
-  - end: 10
+  - end: 1000
     sampler: 'edge'
     size_subg_edge: 4000

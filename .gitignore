@@ -26,3 +26,6 @@ log_train
 tmp.pkl
 pytorch_version/results
 data/test
+cython_sampler.cp38-win_amd64.pyd
+cython_utils.cp38-win_amd64.pyd
+norm_aggr.cp38-win_amd64.pyd
