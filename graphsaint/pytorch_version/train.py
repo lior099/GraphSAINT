@@ -35,7 +35,7 @@ def evaluate_full_batch(model, minibatch, mode='val'):
         f1mic.append(f1_scores[0])
         f1mac.append(f1_scores[1])
         fpr, tpr, thresholds = metrics.roc_curve(to_numpy(labels[n][:,1]), to_numpy(preds[n][:,1]), pos_label=1)
-        auc.append(metrics.auc(fpr, tpr))
+        auc.append(round(metrics.auc(fpr, tpr), 3))
     f1mic = f1mic[0] if len(f1mic)==1 else f1mic
     f1mac = f1mac[0] if len(f1mac)==1 else f1mac
     auc = auc[0] if len(auc)==1 else auc
@@ -153,5 +153,10 @@ if __name__ == '__main__':
     if 'eval_val_every' not in train_params:
         train_params['eval_val_every'] = EVAL_VAL_EVERY_EP
     model, minibatch, minibatch_eval, model_eval = prepare(train_data, train_params, arch_gcn)
+
+    if args_global.saved_model_path:
+        state_dict = torch.load(args_global.saved_model_path, map_location=lambda storage, loc: storage)
+        model.load_state_dict(state_dict)
+        model_eval.load_state_dict(state_dict)
     auc = train(train_phases, model, minibatch, minibatch_eval, model_eval, train_params['eval_val_every'])
     save_state(auc)
