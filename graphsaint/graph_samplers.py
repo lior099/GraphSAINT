@@ -140,8 +140,8 @@ class rw_sampling(GraphSampler):
             self.adj_train.indptr,
             self.adj_train.indices,
             self.node_train,
-            NUM_PAR_SAMPLER,
-            SAMPLES_PER_PROC,
+            Globals.NUM_PAR_SAMPLER,
+            Globals.SAMPLES_PER_PROC,
             self.size_root,
             self.size_depth
         )
@@ -171,8 +171,8 @@ class edge_sampling(GraphSampler):
             self.adj_train.indptr,
             self.adj_train.indices,
             self.node_train,
-            NUM_PAR_SAMPLER,
-            SAMPLES_PER_PROC,
+            Globals.NUM_PAR_SAMPLER,
+            Globals.SAMPLES_PER_PROC,
             self.edge_prob_tri.row,
             self.edge_prob_tri.col,
             self.edge_prob_tri.data.cumsum(),
@@ -234,8 +234,8 @@ class mrw_sampling(GraphSampler):
             self.adj_train.indptr,
             self.adj_train.indices,
             self.node_train,
-            NUM_PAR_SAMPLER,
-            SAMPLES_PER_PROC,
+            Globals.NUM_PAR_SAMPLER,
+            Globals.SAMPLES_PER_PROC,
             self.p_dist,
             self.max_deg,
             self.size_frontier,
@@ -276,8 +276,8 @@ class node_sampling(GraphSampler):
             self.adj_train.indptr,
             self.adj_train.indices,
             self.node_train,
-            NUM_PAR_SAMPLER,
-            SAMPLES_PER_PROC,
+            Globals.NUM_PAR_SAMPLER,
+            Globals.SAMPLES_PER_PROC,
             self.p_dist,
             self.size_subgraph,
         )
@@ -296,7 +296,7 @@ class node_sampling(GraphSampler):
             dtype=np.int64,
         )
         self.p_dist = _p_dist.cumsum()
-        if self.p_dist[-1] > 2**31 - 1:
+        if len(self.p_dist) and self.p_dist[-1] > 2**31 - 1:
             print('warning: total deg exceeds 2**31')
             self.p_dist = self.p_dist.astype(np.float64)
             self.p_dist /= self.p_dist[-1] / (2**31 - 1)
@@ -317,8 +317,8 @@ class full_batch_sampling(GraphSampler):
             self.adj_train.indptr,
             self.adj_train.indices,
             self.node_train,
-            NUM_PAR_SAMPLER,
-            SAMPLES_PER_PROC,
+            Globals.NUM_PAR_SAMPLER,
+            Globals.SAMPLES_PER_PROC,
         )
 
 

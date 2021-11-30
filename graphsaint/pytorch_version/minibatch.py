@@ -48,7 +48,7 @@ class Minibatch:
         Outputs:
             None
         """
-        self.use_cuda = (args_global.gpu >= 0)
+        self.use_cuda = (Globals.args_global.gpu >= 0)
         if cpu_eval:
             self.use_cuda=False
 
@@ -92,9 +92,11 @@ class Minibatch:
         # so neighbor features are simply averaged.
         self.norm_loss_test = np.zeros(self.adj_full_norm.shape[0])
         _denom = len(self.node_train) + len(self.node_val) +  len(self.node_test)
-        self.norm_loss_test[self.node_train] = 1. / _denom
-        self.norm_loss_test[self.node_val] = 1. / _denom
-        self.norm_loss_test[self.node_test] = 1. / _denom
+        if len(self.node_train):
+            self.norm_loss_test[self.node_train] = 1. / _denom
+            self.norm_loss_test[self.node_val] = 1. / _denom
+        if len(self.node_test):
+            self.norm_loss_test[self.node_test] = 1. / _denom
         self.norm_loss_test = torch.from_numpy(self.norm_loss_test.astype(np.float32))
         if self.use_cuda:
             self.norm_loss_test = self.norm_loss_test.cuda()
@@ -192,12 +194,14 @@ class Minibatch:
             tot_sampled_nodes = sum([len(n) for n in self.subgraphs_remaining_nodes])
             if tot_sampled_nodes > self.sample_coverage * self.node_train.size:
                 break
-        print()
         num_subg = len(self.subgraphs_remaining_nodes)
         for i in range(num_subg):
             self.norm_aggr_train[self.subgraphs_remaining_edge_index[i]] += 1
             self.norm_loss_train[self.subgraphs_remaining_nodes[i]] += 1
-        assert self.norm_loss_train[self.node_val].sum() + self.norm_loss_train[self.node_test].sum() == 0
+        if len(self.node_test):
+            assert self.norm_loss_train[self.node_val].sum() + self.norm_loss_train[self.node_test].sum() == 0
+        else:
+            assert self.norm_loss_train[self.node_val].sum() == 0
         for v in range(self.adj_train.shape[0]):
             i_s = self.adj_train.indptr[v]
             i_e = self.adj_train.indptr[v + 1]
@@ -206,7 +210,8 @@ class Minibatch:
             self.norm_aggr_train[i_s : i_e] = val
         self.norm_loss_train[np.where(self.norm_loss_train==0)[0]] = 0.1
         self.norm_loss_train[self.node_val] = 0
-        self.norm_loss_train[self.node_test] = 0
+        if len(self.node_test):
+            self.norm_loss_train[self.node_test] = 0
         self.norm_loss_train[self.node_train] = num_subg / self.norm_loss_train[self.node_train] / self.node_train.size
         self.norm_loss_train = torch.from_numpy(self.norm_loss_train.astype(np.float32))
         if self.use_cuda:
@@ -264,7 +269,7 @@ class Minibatch:
             )
             adj_edge_index = self.subgraphs_remaining_edge_index.pop()
             #print("{} nodes, {} edges, {} degree".format(self.node_subgraph.size,adj.size,adj.size/self.node_subgraph.size))
-            norm_aggr(adj.data, adj_edge_index, self.norm_aggr_train, num_proc=args_global.num_cpu_core)
+            norm_aggr(adj.data, adj_edge_index, self.norm_aggr_train, num_proc=Globals.args_global.num_cpu_core)
             # adj.data[:] = self.norm_aggr_train[adj_edge_index][:]      # this line is interchangable with the above line
             adj = adj_norm(adj, deg=self.deg_train[self.node_subgraph])
             adj = _coo_scipy2torch(adj.tocoo())

@@ -26,7 +26,7 @@ class GraphSAINT(nn.Module):
             None
         """
         super(GraphSAINT,self).__init__()
-        self.use_cuda = (args_global.gpu >= 0)
+        self.use_cuda = (Globals.args_global.gpu >= 0)
         if cpu_eval:
             self.use_cuda=False
         if "attention" in arch_gcn:

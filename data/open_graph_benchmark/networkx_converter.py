@@ -11,12 +11,21 @@ import scipy.sparse as sp
 SEP = '/'
 
 
-def convert(graph, dir, y=None, future_graph=None, feats=None):
+def convert(graph, dir, y=None, future_graph=None, feats=None, mode='train_test', test_seed=0):
     if not os.path.exists(dir):
         os.makedirs(dir)
     size = len(graph.nodes)
-    train_size = 0.7
-    val_size = 0.1
+    if mode == 'train_test':
+        train_size = 0.6
+        val_size = 0.2
+    elif mode == 'train':
+        train_size = 0.8
+        val_size = 0.2
+    elif mode == 'test':
+        train_size = 0.00
+        val_size = 0.00
+    else:
+        raise Exception("mode has to be train_test/train/test")
 
     # feats.npy
     # feats = get_feats(graph)
@@ -25,8 +34,13 @@ def convert(graph, dir, y=None, future_graph=None, feats=None):
     # role.json
     role = dict()
     indices = list(range(size))
+    random.seed(test_seed)
     random.shuffle(indices)
     tr_idx, va_idx = int(train_size * size), int((train_size + val_size) * size)
+    train_val_indices = indices[:va_idx]
+    random.seed()
+    random.shuffle(train_val_indices)
+    indices[:va_idx] = train_val_indices
     role['tr'] = indices[:tr_idx]
     role['va'] = indices[tr_idx:va_idx]
     role['te'] = indices[va_idx:]
@@ -120,7 +134,7 @@ def get_y(graph1, graph2):
     nodes_len = len(graph1.nodes)
     nodes_as_edges = [graph1.nodes[i] for i in range(nodes_len)]
     y = [1 if node['edge'] in graph2.nodes else 0 for node in nodes_as_edges]
-    print(sum(y)/len(y),"of the data has positive label")
+    print(round(sum(y)/len(y), 3),"of the data has positive label (how many links are still connected in next snapshot)")
     # p = 0.2
     # y = [1 if random.random() <= p else 0 for i in range(nodes_len)]
     return y
@@ -134,4 +148,4 @@ if __name__ == '__main__':
     graph1 = random_graph(size, p)
     graph2 = random_graph(size, p)
     y = get_y(graph1, graph2)
-    convert(graph1, y, './data/test/')
+    # convert(graph1, y, './data/test/')

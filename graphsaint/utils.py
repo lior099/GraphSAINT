@@ -66,10 +66,11 @@ def load_data(prefix, normalize=True):
     assert len(class_map) == feats.shape[0]
     # ---- normalize feats ----
     train_nodes = np.array(list(set(adj_train.nonzero()[0])))
-    train_feats = feats[train_nodes]
-    scaler = StandardScaler()
-    scaler.fit(train_feats)
-    feats = scaler.transform(feats)
+    if len(train_nodes):
+        train_feats = feats[train_nodes]
+        scaler = StandardScaler()
+        scaler.fit(train_feats)
+        feats = scaler.transform(feats)
     # -------------------------
     return adj_full, adj_train, feats, class_map, role
 
@@ -144,7 +145,7 @@ def parse_n_prepare(flags):
 
 def log_dir(f_train_config,prefix,git_branch,git_rev,timestamp):
     import getpass
-    log_dir = args_global.dir_log+"/log_train/" + prefix.split("/")[-1]
+    log_dir = Globals.args_global.dir_log+"/log_train/" + prefix.split("/")[-1]
     log_dir += "/{ts}-{model}-{gitrev:s}/".format(
             model='graphsaint',
             gitrev=git_rev.strip(),

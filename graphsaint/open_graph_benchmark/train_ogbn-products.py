@@ -67,19 +67,19 @@ def prepare(train_data,train_params,arch_gcn):
     printf("TOTAL NUM OF PARAMS = {}".format(sum(p.numel() for p in model.parameters())), style="yellow")
     minibatch_eval=Minibatch(adj_full_norm, adj_train, role, train_params, cpu_eval=True)
     model_eval=GraphSAINT(num_classes, arch_gcn, train_params, feat_full, class_arr, cpu_eval=True)
-    if args_global.gpu >= 0:
+    if Globals.args_global.gpu >= 0:
         model = model.cuda()
     return model, minibatch, minibatch_eval, model_eval
 
 
 def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_every):
-    if not args_global.cpu_eval:
+    if not Globals.args_global.cpu_eval:
         minibatch_eval=minibatch
     epoch_ph_start = 0
     f1mic_best, ep_best = 0, -1
     time_train = 0
-    dir_saver = '{}/pytorch_models'.format(args_global.dir_log)
-    path_saver = '{}/pytorch_models/saved_model_{}.pkl'.format(args_global.dir_log, timestamp)
+    dir_saver = '{}/pytorch_models'.format(Globals.args_global.dir_log)
+    path_saver = '{}/pytorch_models/saved_model_{}.pkl'.format(Globals.args_global.dir_log, Globals.timestamp)
     for ip, phase in enumerate(train_phases):
         printf('START PHASE {:4d}'.format(ip),style='underline')
         minibatch.set_sampler(phase)
@@ -93,20 +93,20 @@ def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_e
                 t1 = time.time()
                 loss_train,preds_train,labels_train = model.train_step(*minibatch.one_batch(mode='train'))
                 time_train_ep += time.time() - t1
-                if not minibatch.batch_num % args_global.eval_train_every:
+                if not minibatch.batch_num % Globals.args_global.eval_train_every:
                     f1_mic, f1_mac = calc_f1(to_numpy(labels_train),to_numpy(preds_train),model.sigmoid_loss)
                     l_loss_tr.append(loss_train)
                     l_f1mic_tr.append(f1_mic)
                     l_f1mac_tr.append(f1_mac)
             if (e+1)%eval_val_every == 0:
-                if args_global.cpu_eval:
+                if Globals.args_global.cpu_eval:
                     torch.save(model.state_dict(),'tmp.pkl')
                     model_eval.load_state_dict(torch.load('tmp.pkl',map_location=lambda storage, loc: storage))
                 else:
                     model_eval = model
                 loss_val, f1mic_val, f1mac_val = evaluate_full_batch(model_eval, minibatch_eval, mode='val')
                 printf(' TRAIN (Ep avg): loss = {:.4f}\tmic = {:.4f}\tmac = {:.4f}\ttrain time = {:.4f} sec'\
-                        .format(f_mean(l_loss_tr), f_mean(l_f1mic_tr), f_mean(l_f1mac_tr), time_train_ep))
+                        .format(Globals.f_mean(l_loss_tr), Globals.f_mean(l_f1mic_tr), Globals.f_mean(l_f1mac_tr), time_train_ep))
                 printf(' VALIDATION:     loss = {:.4f}\tmic = {:.4f}\tmac = {:.4f}'\
                         .format(loss_val, f1mic_val, f1mac_val), style='yellow')
                 if f1mic_val > f1mic_best:
@@ -119,7 +119,7 @@ def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_e
         epoch_ph_start = int(phase['end'])
     printf("Optimization Finished!", style="yellow")
     if ep_best >= 0:
-        if args_global.cpu_eval:
+        if Globals.args_global.cpu_eval:
             model_eval.load_state_dict(torch.load(path_saver, map_location=lambda storage, loc: storage))
         else:
             model.load_state_dict(torch.load(path_saver))
@@ -137,10 +137,10 @@ def train(train_phases, model, minibatch, minibatch_eval, model_eval, eval_val_e
 
 
 if __name__ == '__main__':
-    log_dir(args_global.train_config, args_global.data_prefix, git_branch, git_rev, timestamp)
-    train_params, train_phases, train_data, arch_gcn = parse_n_prepare(args_global)
+    log_dir(Globals.args_global.train_config, Globals.args_global.data_prefix, Globals.git_branch, Globals.git_rev, Globals.timestamp)
+    train_params, train_phases, train_data, arch_gcn = parse_n_prepare(Globals.args_global)
     if 'eval_val_every' not in train_params:
-        train_params['eval_val_every'] = EVAL_VAL_EVERY_EP
+        train_params['eval_val_every'] = Globals.EVAL_VAL_EVERY_EP
     test_accs = list()
     for run in range(10):
         print(f'>>>>>> Run {run:02d}:')

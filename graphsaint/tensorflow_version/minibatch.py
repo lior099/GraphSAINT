@@ -182,7 +182,7 @@ class Minibatch:
             #print("{} nodes, {} edges, {} degree".format(self.node_subgraph.size,adj.size,adj.size/self.node_subgraph.size))
             tt1 = time.time()
             assert len(self.node_subgraph) == adj.shape[0]
-            norm_aggr(adj.data,adj_edge_index,self.norm_aggr_train,num_proc=args_global.num_cpu_core)
+            norm_aggr(adj.data,adj_edge_index,self.norm_aggr_train,num_proc=Globals.args_global.num_cpu_core)
 
             tt2 = time.time()
             adj = adj_norm(adj, deg=self.deg_train[self.node_subgraph])
