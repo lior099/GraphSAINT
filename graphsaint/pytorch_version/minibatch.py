@@ -56,8 +56,12 @@ class Minibatch:
         self.node_val = np.array(role['va'])
         self.node_test = np.array(role['te'])
 
+
+
         self.adj_full_norm = _coo_scipy2torch(adj_full_norm.tocoo())
         self.adj_train = adj_train
+        self.edge_train, self.edge_val, self.edge_test = self.edge_indices()
+
         # -----------------------
         # sanity check (optional)
         # -----------------------
@@ -87,16 +91,26 @@ class Minibatch:
         self.subgraphs_remaining_nodes = []
         self.subgraphs_remaining_edge_index = []
 
-        self.norm_loss_train = np.zeros(self.adj_train.shape[0])
+        adj_train_size = self.adj_train.shape[0] if Globals.args_global.loss_type == 'node' else self.adj_train.nnz
+        adj_full_norm_size = self.adj_full_norm.shape[0] if Globals.args_global.loss_type == 'node' else adj_full_norm.nnz
+        self.norm_loss_train = np.zeros(adj_train_size)
         # norm_loss_test is used in full batch evaluation (without sampling).
         # so neighbor features are simply averaged.
-        self.norm_loss_test = np.zeros(self.adj_full_norm.shape[0])
-        _denom = len(self.node_train) + len(self.node_val) +  len(self.node_test)
-        if len(self.node_train):
-            self.norm_loss_test[self.node_train] = 1. / _denom
-            self.norm_loss_test[self.node_val] = 1. / _denom
-        if len(self.node_test):
-            self.norm_loss_test[self.node_test] = 1. / _denom
+        self.norm_loss_test = np.zeros(adj_full_norm_size)
+        if Globals.args_global.loss_type == 'node':
+            _denom = len(self.node_train) + len(self.node_val) +  len(self.node_test)
+            if len(self.node_train):
+                self.norm_loss_test[self.node_train] = 1. / _denom
+                self.norm_loss_test[self.node_val] = 1. / _denom
+            if len(self.node_test):
+                self.norm_loss_test[self.node_test] = 1. / _denom
+        # else:
+        #     _denom = len(self.edge_train) + len(self.edge_val) + len(self.edge_test)
+        #     if len(self.edge_train):
+        #         self.norm_loss_test[self.edge_train] = 1. / _denom
+        #         self.norm_loss_test[self.edge_val] = 1. / _denom
+        #     if len(self.node_test):
+        #         self.norm_loss_test[self.edge_test] = 1. / _denom
         self.norm_loss_test = torch.from_numpy(self.norm_loss_test.astype(np.float32))
         if self.use_cuda:
             self.norm_loss_test = self.norm_loss_test.cuda()
@@ -174,8 +188,8 @@ class Minibatch:
             )
         else:
             raise NotImplementedError
-
-        self.norm_loss_train = np.zeros(self.adj_train.shape[0])
+        adj_train_size = self.adj_train.shape[0] # if Globals.args_global.loss_type == 'node' else self.adj_train.nnz
+        self.norm_loss_train = np.zeros(adj_train_size)
         self.norm_aggr_train = np.zeros(self.adj_train.size).astype(np.float32)
 
         # -------------------------------------------------------------
@@ -195,6 +209,7 @@ class Minibatch:
             if tot_sampled_nodes > self.sample_coverage * self.node_train.size:
                 break
         num_subg = len(self.subgraphs_remaining_nodes)
+        # if Globals.args_global.loss_type == 'node':
         for i in range(num_subg):
             self.norm_aggr_train[self.subgraphs_remaining_edge_index[i]] += 1
             self.norm_loss_train[self.subgraphs_remaining_nodes[i]] += 1
@@ -251,6 +266,13 @@ class Minibatch:
         if mode in ['val','test','valtest']:
             self.node_subgraph = np.arange(self.adj_full_norm.shape[0])
             adj = self.adj_full_norm
+        elif mode == 'true_train':
+            self.node_subgraph = self.node_train.copy()
+            adj = self.adj_train
+            adj = adj_norm(adj, deg=self.deg_train[self.node_subgraph])
+            adj = _coo_scipy2torch(adj.tocoo())
+            if self.use_cuda:
+                adj = adj.cuda()
         else:
             assert mode == 'train'
             if len(self.subgraphs_remaining_nodes) == 0:
@@ -276,8 +298,10 @@ class Minibatch:
             if self.use_cuda:
                 adj = adj.cuda()
             self.batch_num += 1
-        norm_loss = self.norm_loss_test if mode in ['val','test', 'valtest'] else self.norm_loss_train
-        norm_loss = norm_loss[self.node_subgraph]
+        norm_loss = None
+        if Globals.args_global.loss_type == 'node':
+            norm_loss = self.norm_loss_test if mode in ['val','test', 'valtest'] else self.norm_loss_train
+            norm_loss = norm_loss[self.node_subgraph]
         return self.node_subgraph, adj, norm_loss
 
 
@@ -290,3 +314,20 @@ class Minibatch:
 
     def end(self):
         return (self.batch_num + 1) * self.size_subg_budget >= self.node_train.shape[0]
+
+    def edge_indices(self):
+        edge_train, edge_val, edge_test = np.array([]), np.array([]), np.array([])
+        # original_to_new = {val: i for i, val in enumerate(node_subgraph)}
+        c = 0
+        for i, (idx1, idx2) in enumerate(zip(self.adj_full_norm._indices()[0], self.adj_full_norm._indices()[1])):
+            idx1, idx2 = int(idx1), int(idx2)
+
+            if idx1 in self.node_test or idx2 in self.node_test:
+                edge_test = np.append(edge_test, i)
+            elif idx1 in self.node_val or idx2 in self.node_val:
+                edge_val = np.append(edge_val, i)
+            else:
+                assert idx1 in self.node_train or idx2 in self.node_train
+                edge_train = np.append(edge_train, i)
+        return edge_train.astype(int), edge_val.astype(int), edge_test.astype(int)
+

@@ -11,47 +11,59 @@ import scipy.sparse as sp
 SEP = '/'
 
 
-def convert(graph, dir, y=None, future_graph=None, feats=None, mode='train_test', test_seed=0):
+def convert(graph, dir, labels, future_graph=None, feats=None, mode='train_test', test_seed=0, line=False, role=None):
     if not os.path.exists(dir):
         os.makedirs(dir)
     size = len(graph.nodes)
-    if mode == 'train_test':
-        train_size = 0.6
-        val_size = 0.2
-    elif mode == 'train':
-        train_size = 0.8
-        val_size = 0.2
-    elif mode == 'test':
-        train_size = 0.00
-        val_size = 0.00
-    else:
-        raise Exception("mode has to be train_test/train/test")
+    # max_node = max(graph.nodes)
+    # print("nodes_len =", len(graph.nodes), ", max_node =", max(graph.nodes))
 
     # feats.npy
     # feats = get_feats(graph)
     np.save(SEP.join([dir, 'feats.npy']), feats)
 
     # role.json
-    role = dict()
-    indices = list(range(size))
-    random.seed(test_seed)
-    random.shuffle(indices)
-    tr_idx, va_idx = int(train_size * size), int((train_size + val_size) * size)
-    train_val_indices = indices[:va_idx]
-    random.seed()
-    random.shuffle(train_val_indices)
-    indices[:va_idx] = train_val_indices
-    role['tr'] = indices[:tr_idx]
-    role['va'] = indices[tr_idx:va_idx]
-    role['te'] = indices[va_idx:]
+    if role is None:
+        if mode == 'train_test':
+            train_size = 0.6
+            val_size = 0.2
+        elif mode == 'train':
+            train_size = 0.8
+            val_size = 0.2
+        elif mode == 'test':
+            train_size = 0.00
+            val_size = 0.00
+        else:
+            raise Exception("mode has to be train_test/train/test")
+
+        role = dict()
+        indices = list(range(size))
+        random.seed(test_seed)
+        random.shuffle(indices)
+        tr_idx, va_idx = int(train_size * size), int((train_size + val_size) * size)
+        train_val_indices = indices[:va_idx]
+        random.seed()
+        random.shuffle(train_val_indices)
+        indices[:va_idx] = train_val_indices
+        role['tr'] = indices[:tr_idx]
+        role['va'] = indices[tr_idx:va_idx]
+        role['te'] = indices[va_idx:]
     with open(SEP.join([dir, 'role.json']), 'w') as f:
         json.dump(role, f)
 
     # class_map.json
-    class_map = dict()
-    y = get_y(graph, future_graph)
-    for i in range(size):
-        class_map[str(i)] = int(y[i])
+    if labels is not None:
+        class_map = {str(i): int(label) for i, label in enumerate(labels)}
+    else:
+        class_map = dict()
+        if line:
+            y = get_line_y(graph, future_graph)
+            for i in range(size):
+                class_map[str(i)] = int(y[i])
+        else:
+            y = get_mul_y(graph, future_graph)
+            for i in range(len(graph.edges)):
+                class_map[str(i)] = int(y[i])
     with open(SEP.join([dir, 'class_map.json']), 'w') as f:
         json.dump(class_map, f)
 
@@ -128,16 +140,36 @@ def get_feats(graph):
     feats = np.array(feats)
     return feats
 
-def get_y(graph1, graph2):
+def get_line_y(graph1, graph2):
     # if len(graph1.nodes) != len(graph2.nodes):
     #     raise Exception("bad graphs")
     nodes_len = len(graph1.nodes)
-    nodes_as_edges = [graph1.nodes[i] for i in range(nodes_len)]
-    y = [1 if node['edge'] in graph2.nodes else 0 for node in nodes_as_edges]
-    print(round(sum(y)/len(y), 3),"of the data has positive label (how many links are still connected in next snapshot)")
-    # p = 0.2
-    # y = [1 if random.random() <= p else 0 for i in range(nodes_len)]
+    nodes_as_edges = [graph1.nodes[i]['original'] for i in range(nodes_len)]
+    y = [1 if edge in graph2.nodes else 0 for edge in nodes_as_edges]
+    ratio = round(sum(y)/len(y), 3)
+    print(ratio,"of the data has positive label (how many links are still connected in next snapshot)")
+    if ratio in [0,1]:
+        raise Exception('Found only 1 class...')
     return y
+
+def get_mul_y(graph1, graph2):
+    nodes_len = len(graph1.nodes)
+    node_to_original = {list(graph1.nodes)[i]: graph1.nodes[i]['original'] for i in range(len(graph1.nodes))}
+    # node_to_original = {node: node for node in graph1.nodes}
+    # original_graph2_edges = []
+    y = [1 if (node_to_original[v], node_to_original[u]) in graph2.edges else 0 for v, u in graph1.edges]
+    print(round(sum(y) / len(y), 3),
+          "of the data has positive label (how many links are still connected in next snapshot)")
+    return y
+
+def remove_missing(role, graph_nodes):
+    new_role = {'tr': [], 'va': [], 'te': []}
+    for key, nodes in role.items():
+        for node in nodes:
+            if node in graph_nodes:
+                new_role[key].append(node)
+    return new_role
+
 
 if __name__ == '__main__':
     random.seed(0)

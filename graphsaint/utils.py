@@ -63,14 +63,19 @@ def load_data(prefix, normalize=True):
     feats = np.load('./{}/feats.npy'.format(prefix))
     class_map = json.load(open('./{}/class_map.json'.format(prefix)))
     class_map = {int(k):v for k,v in class_map.items()}
-    assert len(class_map) == feats.shape[0]
+    if Globals.args_global.loss_type == 'node':
+        assert len(class_map) == feats.shape[0]
+    elif Globals.args_global.loss_type == 'edge':
+        assert len(class_map) == adj_full.nnz
     # ---- normalize feats ----
     train_nodes = np.array(list(set(adj_train.nonzero()[0])))
     if len(train_nodes):
         train_feats = feats[train_nodes]
-        scaler = StandardScaler()
-        scaler.fit(train_feats)
-        feats = scaler.transform(feats)
+    else:
+        train_feats = feats
+    scaler = StandardScaler()
+    scaler.fit(train_feats)
+    feats = scaler.transform(feats)
     # -------------------------
     return adj_full, adj_train, feats, class_map, role
 
@@ -79,15 +84,15 @@ def process_graph_data(adj_full, adj_train, feats, class_map, role):
     """
     setup vertex property map for output classes, train/val/test masks, and feats
     """
-    num_vertices = adj_full.shape[0]
+    class_arr_len = adj_full.shape[0] if Globals.args_global.loss_type == 'node' else adj_full.nnz
     if isinstance(list(class_map.values())[0],list):
         num_classes = len(list(class_map.values())[0])
-        class_arr = np.zeros((num_vertices, num_classes))
+        class_arr = np.zeros((class_arr_len, num_classes))
         for k,v in class_map.items():
             class_arr[k] = v
     else:
         num_classes = max(class_map.values()) - min(class_map.values()) + 1
-        class_arr = np.zeros((num_vertices, num_classes))
+        class_arr = np.zeros((class_arr_len, num_classes))
         offset = min(class_map.values())
         for k,v in class_map.items():
             class_arr[k][v-offset] = 1

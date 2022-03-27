@@ -25,10 +25,10 @@ class GraphSAINT(nn.Module):
         Outputs:
             None
         """
-        super(GraphSAINT,self).__init__()
+        super(GraphSAINT, self).__init__()
         self.use_cuda = (Globals.args_global.gpu >= 0)
         if cpu_eval:
-            self.use_cuda=False
+            self.use_cuda = False
         if "attention" in arch_gcn:
             if "gated_attention" in arch_gcn:
                 if arch_gcn['gated_attention']:
@@ -57,7 +57,7 @@ class GraphSAINT(nn.Module):
                 self.label_full_cat = self.label_full_cat.cuda()
         self.num_classes = num_classes
         _dims, self.order_layer, self.act_layer, self.bias_layer, self.aggr_layer \
-                        = parse_layer_yml(arch_gcn, self.feat_full.shape[1])
+            = parse_layer_yml(arch_gcn, self.feat_full.shape[1])
         # get layer index for each conv layer, useful for jk net last layer aggregation
         self.set_idx_conv()
         self.set_dims(_dims)
@@ -70,8 +70,12 @@ class GraphSAINT(nn.Module):
         self.aggregators, num_param = self.get_aggregators()
         self.num_params += num_param
         self.conv_layers = nn.Sequential(*self.aggregators)
-        self.classifier = layers.HighOrderAggregator(self.dims_feat[-1], self.num_classes,\
-                            act='I', order=0, dropout=self.dropout, bias='bias')
+        if Globals.args_global.loss_action == 'mul':
+            self.classifier = layers.HighOrderAggregator(self.dims_feat[-1], self.num_classes,
+                                                         act='I', order=0, dropout=self.dropout, bias='bias')
+        elif Globals.args_global.loss_action == 'cat':
+            self.classifier = layers.HighOrderAggregator(2 * self.dims_feat[-1], self.num_classes,
+                                                         act='I', order=0, dropout=self.dropout, bias='bias')
         self.num_params += self.classifier.num_param
         self.optimizer = torch.optim.Adam(self.parameters(), lr=self.lr)
 
@@ -87,10 +91,10 @@ class GraphSAINT(nn.Module):
             None
         """
         self.dims_feat = [dims[0]] + [
-            ((self.aggr_layer[l]=='concat') * self.order_layer[l] + 1) * dims[l+1]
+            ((self.aggr_layer[l] == 'concat') * self.order_layer[l] + 1) * dims[l + 1]
             for l in range(len(dims) - 1)
         ]
-        self.dims_weight = [(self.dims_feat[l],dims[l+1]) for l in range(len(dims)-1)]
+        self.dims_weight = [(self.dims_feat[l], dims[l + 1]) for l in range(len(dims) - 1)]
 
     def set_idx_conv(self):
         """
@@ -107,16 +111,18 @@ class GraphSAINT(nn.Module):
         else:
             self.idx_conv = list(np.where(np.array(self.order_layer) == 1)[0])
 
-
-    def forward(self, node_subgraph, adj_subgraph):
+    def forward(self, node_subgraph, adj_subgraph, adj_full_norm):
+        edge_subgraph = self.get_edge_subgraph(node_subgraph, adj_subgraph, adj_full_norm)
+        subgraph = node_subgraph if Globals.args_global.loss_type == 'node' else edge_subgraph
         feat_subg = self.feat_full[node_subgraph]
-        label_subg = self.label_full[node_subgraph]
-        label_subg_converted = label_subg if self.sigmoid_loss else self.label_full_cat[node_subgraph]
+        label_subg = self.label_full[subgraph]
+        label_subg_converted = label_subg if self.sigmoid_loss else label_subg  # self.label_full_cat[subgraph]
         _, emb_subg = self.conv_layers((adj_subgraph, feat_subg))
         emb_subg_norm = F.normalize(emb_subg, p=2, dim=1)
-        pred_subg = self.classifier((None, emb_subg_norm))[1]
+        # pred_subg = self.classifier((None, emb_subg_norm))[1]
+        pred_subg = self.classifier((None, emb_subg_norm))[1] if Globals.args_global.loss_type == 'node' else \
+            self.get_edge_pred_subg(emb_subg_norm, adj_subgraph, action=Globals.args_global.loss_action)
         return pred_subg, label_subg, label_subg_converted
-
 
     def _loss(self, preds, labels, norm_loss):
         """
@@ -124,11 +130,10 @@ class GraphSAINT(nn.Module):
         """
         if self.sigmoid_loss:
             norm_loss = norm_loss.unsqueeze(1)
-            return torch.nn.BCEWithLogitsLoss(weight=norm_loss,reduction='sum')(preds, labels)
+            return torch.nn.BCEWithLogitsLoss(weight=norm_loss, reduction='sum')(preds, labels)
         else:
             _ls = torch.nn.CrossEntropyLoss(reduction='none')(preds, labels)
-            return (norm_loss*_ls).sum()
-
+            return (norm_loss * _ls).sum()
 
     def get_aggregators(self):
         """
@@ -138,41 +143,107 @@ class GraphSAINT(nn.Module):
         aggregators = []
         for l in range(self.num_layers):
             aggr = self.aggregator_cls(
-                    *self.dims_weight[l],
-                    dropout=self.dropout,
-                    act=self.act_layer[l],
-                    order=self.order_layer[l],
-                    aggr=self.aggr_layer[l],
-                    bias=self.bias_layer[l],
-                    mulhead=self.mulhead,
+                *self.dims_weight[l],
+                dropout=self.dropout,
+                act=self.act_layer[l],
+                order=self.order_layer[l],
+                aggr=self.aggr_layer[l],
+                bias=self.bias_layer[l],
+                mulhead=self.mulhead,
             )
             num_param += aggr.num_param
             aggregators.append(aggr)
         return aggregators, num_param
 
     def predict(self, preds):
-        return nn.Sigmoid()(preds) if self.sigmoid_loss else F.softmax(preds, dim=1)
+        return nn.Sigmoid()(preds) if self.sigmoid_loss else F.softmax(preds, dim=1)[:, -1]
 
-
-    def train_step(self, node_subgraph, adj_subgraph, norm_loss_subgraph):
+    def train_step(self, node_subgraph, adj_subgraph, norm_loss_subgraph, minibatch):
         """
         Forward and backward propagation
         """
         self.train()
         self.optimizer.zero_grad()
-        preds, labels, labels_converted = self(node_subgraph, adj_subgraph)
-        loss = self._loss(preds, labels_converted, norm_loss_subgraph) # labels.squeeze()?
+        preds, labels, labels_converted = self(node_subgraph, adj_subgraph, minibatch.adj_full_norm)
+        if Globals.args_global.loss_type == 'node':
+            loss = self._loss(preds, labels_converted, norm_loss_subgraph)  # labels.squeeze()?
+        elif Globals.args_global.loss_type == 'edge':
+            loss = self.costum_loss(preds, labels_converted, norm_loss_subgraph)
         loss.backward()
         torch.nn.utils.clip_grad_norm(self.parameters(), 5)
         self.optimizer.step()
         return loss, self.predict(preds), labels
 
-    def eval_step(self, node_subgraph, adj_subgraph, norm_loss_subgraph):
+    def eval_step(self, node_subgraph, adj_subgraph, norm_loss_subgraph, minibatch):
         """
         Forward propagation only
         """
         self.eval()
         with torch.no_grad():
-            preds,labels,labels_converted = self(node_subgraph, adj_subgraph)
-            loss = self._loss(preds,labels_converted,norm_loss_subgraph)
+            preds, labels, labels_converted = self(node_subgraph, adj_subgraph, minibatch.adj_full_norm)
+
+            if Globals.args_global.loss_type == 'node':
+                loss = self._loss(preds, labels_converted, norm_loss_subgraph)  # labels.squeeze()?
+            elif Globals.args_global.loss_type == 'edge':
+                loss = self.costum_loss(preds, labels_converted, norm_loss_subgraph)
         return loss, self.predict(preds), labels
+
+    def get_edge_subgraph(self, node_subgraph, adj_subgraph, adj_full_norm):
+        edge_subgraph = np.array([])
+        original_to_new = {val: i for i, val in enumerate(node_subgraph)}
+        for i, (idx1, idx2) in enumerate(zip(adj_full_norm._indices()[0], adj_full_norm._indices()[1])):
+            if int(idx1) in original_to_new.keys() and int(idx2) in original_to_new.keys() and \
+                    adj_subgraph[original_to_new[int(idx1)]][original_to_new[int(idx2)]]:
+                edge_subgraph = np.append(edge_subgraph, int(i))
+        return edge_subgraph.astype(int)
+
+    def get_edge_pred_subg(self, emb_subg_norm, adj_subgraph, action='mul'):
+        edge_pred_subg = torch.FloatTensor([])
+        if self.use_cuda:
+            edge_pred_subg = edge_pred_subg.cuda()
+        for i, (idx1, idx2) in enumerate(zip(adj_subgraph._indices()[0], adj_subgraph._indices()[1])):
+            if action == 'mul':
+                edge_pred_subg = torch.cat(
+                    (edge_pred_subg, torch.matmul(emb_subg_norm[idx1], emb_subg_norm[idx2]).unsqueeze(0)))
+                # Dim = [N]
+            else:
+                assert action == 'cat'
+                edge_pred_subg = torch.cat(
+                    (edge_pred_subg, torch.cat((emb_subg_norm[idx1], emb_subg_norm[idx2])).unsqueeze(0)))
+                # Dim = [N, 256]
+
+            # if int(idx1) in original_to_new.keys() and int(idx2) in original_to_new.keys() and \
+            #    adj_subgraph[original_to_new[int(idx1)]][original_to_new[int(idx2)]]:
+            #     edge_pred_subg = torch.cat(edge_pred_subg, )
+        if action == 'cat':
+            edge_pred_subg = self.classifier((None, edge_pred_subg))[1]
+            # Dim = [N, 2]
+        # else:
+        #     edge_pred_subg = torch.mul(edge_pred_subg, -1)
+        return edge_pred_subg
+
+    # def get_edge_norm_loss(self, norm_loss):
+    #     edge_pred_subg = torch.FloatTensor([])
+    #     for i, (idx1, idx2) in enumerate(zip(adj_subgraph._indices()[0], adj_subgraph._indices()[1])):
+    #         edge_pred_subg = torch.cat((edge_pred_subg, (pred_subg[idx1] * pred_subg[idx2]).unsqueeze(0)))
+    #         # if int(idx1) in original_to_new.keys() and int(idx2) in original_to_new.keys() and \
+    #         #    adj_subgraph[original_to_new[int(idx1)]][original_to_new[int(idx2)]]:
+    #         #     edge_pred_subg = torch.cat(edge_pred_subg, )
+    #     return edge_pred_subg
+
+    def costum_loss(self, preds, labels, norm_loss):
+        # norm_loss = norm_loss.unsqueeze(1)
+        if Globals.args_global.loss_action == 'mul':
+            zeros = torch.zeros(preds.size()[0], 1)
+            preds = preds.unsqueeze(1)
+            #
+            # preds = torch.cat((preds, zeros), 1)
+            preds = torch.cat((zeros, preds), 1)
+
+            # Dim = [N, 2]
+        labels = labels.float()
+        return torch.nn.BCEWithLogitsLoss(reduction='mean')(preds, labels)
+        # preds = preds.unsqueeze(1)
+        # _ls = torch.nn.CrossEntropyLoss(reduction='none')(preds, labels)
+        #
+        # return _ls.sum() / len(_ls)

@@ -27,7 +27,7 @@ def evaluate_full_batch(model, minibatch, mode='val'):
         When calculating the F1 score, we will mask the relevant root nodes
         (e.g., those belonging to the val / test sets).
     """
-    loss,preds,labels = model.eval_step(*minibatch.one_batch(mode=mode))
+    loss,preds,labels = model.eval_step(*minibatch.one_batch(mode=mode), minibatch)
     if mode == 'val':
         node_target = [minibatch.node_val]
     elif mode == 'test':

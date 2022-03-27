@@ -21,6 +21,8 @@ class Globals:
     EVAL_VAL_EVERY_EP = None
     f_mean = None
     DTYPE = None
+    loss_type = None
+    loss_action = None
 
     @staticmethod
     def update_globals(gs_args):
@@ -44,7 +46,7 @@ class Globals:
         Globals.parser.add_argument("--data_prefix",required=False,type=str,help="prefix identifying training data")
         Globals.parser.add_argument("--dir_log",default=".",type=str,help="base directory for logging and saving embeddings")
         Globals.parser.add_argument("--gpu",default="-1234",type=str,help="which GPU to use")
-        Globals.parser.add_argument("--eval_train_every",default=15,type=int,help="How often to evaluate training subgraph accuracy")
+        Globals.parser.add_argument("--eval_train_every",default=1,type=int,help="How often to evaluate training subgraph accuracy")
         Globals.parser.add_argument("--train_config",required=False,type=str,help="path to the configuration of training (*.yml)")
         Globals.parser.add_argument("--dtype",default="s",type=str,help="d for double, s for single precision floating point")
         Globals.parser.add_argument("--timeline",default=False,action="store_true",help="to save timeline.json or not")
@@ -52,6 +54,8 @@ class Globals:
         Globals.parser.add_argument("--dualGPU",default=False,action="store_true",help="whether to distribute the model to two GPUs")
         Globals.parser.add_argument("--cpu_eval",default=False,action="store_true",help="whether to use CPU to do evaluation")
         Globals.parser.add_argument("--saved_model_path",default="",type=str,help="path to pretrained model file")
+        Globals.parser.add_argument("--loss_type", default="node", type=str, help="which loss to use (node / edge)")
+        Globals.parser.add_argument("--loss_action", default="mul", type=str, help="which loss action to use (mul / cat)")
         Globals.args_global = Globals.parser.parse_args(gs_args)
 
 
